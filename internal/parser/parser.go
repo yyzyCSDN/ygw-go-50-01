@@ -35,9 +35,13 @@ func NewParser(reg *schema.Registry, maxTxnSize int) *Parser {
 func (p *Parser) Parse(entries []source.LogEntry) ([]model.ChangeEvent, error) {
 	events := make([]model.ChangeEvent, 0, len(entries))
 	for _, entry := range entries {
-		version := p.reg.CurrentVersion(entry.Table)
-		if version == 0 {
-			return nil, fmt.Errorf("resolve schema for %s at %d: no version", entry.Table, entry.Seq)
+		// Resolve the schema version that was active at the entry's own source
+		// position, never the live head. A DDL applied later must not restructure
+		// events written before it, and a rollback that replays old entries must
+		// decode them with the layout that produced them.
+		version, err := schema.BindVersion(p.reg, entry.Table, model.Position(entry.Seq))
+		if err != nil || version == 0 {
+			return nil, fmt.Errorf("resolve schema for %s at %d: %v", entry.Table, entry.Seq, err)
 		}
 		columns, err := p.decoder.Decode(entry, version)
 		if err != nil {

@@ -69,7 +69,9 @@ func (r *Registry) Schema(table string, version uint64) (model.TableSchema, erro
 
 // VersionAt resolves the schema version active at a source position. The
 // resolution is position aware so events written before a DDL are decoded
-// with the structure that was in effect when they were produced.
+// with the structure that was in effect when they were produced: it returns
+// the version of the last schema change applied at or before pos, falling
+// back to the earliest version when pos predates every recorded change.
 func (r *Registry) VersionAt(table string, pos model.Position) (uint64, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -77,7 +79,7 @@ func (r *Registry) VersionAt(table string, pos model.Position) (uint64, error) {
 	if latest == 0 {
 		return 0, fmt.Errorf("no schema registered for table %s", table)
 	}
-	return latest, nil
+	return r.historyIndex.VersionAt(table, pos, latest), nil
 }
 
 // Versions returns all registered versions of a table in apply order.
