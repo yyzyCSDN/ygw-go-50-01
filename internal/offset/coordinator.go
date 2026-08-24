@@ -29,21 +29,23 @@ func NewCoordinator(store *Store, deliver DeliverFunc, stats *model.PipelineStat
 
 // ProcessBatch delivers the batch and advances the committed offset to the
 // acknowledged position afterwards. A failed delivery leaves the offset where
-// it was so the events can be retried after restart.
+// it was so the events can be retried after restart. Advancing only after the
+// target acknowledges is what keeps a restart from dropping events that were
+// read but never delivered.
 func (c *Coordinator) ProcessBatch(ctx context.Context, batch model.Batch) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.store.Advance(batch.MaxPosition()); err != nil {
+	acked, err := c.deliver(ctx, batch)
+	if err != nil {
 		return err
 	}
-	_, err := c.deliver(ctx, batch)
-	if err != nil {
+	if err := c.store.Advance(acked); err != nil {
 		return err
 	}
 	c.store.RecordRead(batch.MaxPosition())
 	if c.stats != nil {
 		c.stats.AckedCount.Add(uint64(len(batch.Events)))
-		c.stats.LastCommitted.Store(batch.MaxPosition())
+		c.stats.LastCommitted.Store(acked)
 		c.stats.LastRead.Store(batch.MaxPosition())
 	}
 	return nil
