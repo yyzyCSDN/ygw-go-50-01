@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CDCPipeline 同步监控</title>
+  <style>
+    body { font-family: "Microsoft YaHei", system-ui, sans-serif; margin: 0; background: #f4f6f8; color: #1f2933; }
+    header { background: #123c63; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    main { padding: 24px; max-width: 1080px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 18px 0; }
+    .card { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .card .label { color: #52606d; font-size: 13px; }
+    .card .value { font-size: 24px; font-weight: 600; margin-top: 6px; }
+    .warn { color: #b7791f; }
+    .err { color: #c53030; }
+    .ok { color: #276749; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #e4e7eb; }
+    th { background: #eef2f6; }
+    #updated { color: #52606d; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>CDCPipeline 变更数据捕获与同步监控</strong>
+    <span id="updated">--</span>
+  </header>
+  <main>
+    <div class="grid" id="cards"></div>
+    <h3>目标表行数</h3>
+    <table>
+      <thead><tr><th>表</th><th>已应用行数</th><th>schema 版本数</th></tr></thead>
+      <tbody id="tables"></tbody>
+    </table>
+    <h3>运行统计</h3>
+    <table>
+      <thead><tr><th>指标</th><th>值</th></tr></thead>
+      <tbody id="stats"></tbody>
+    </table>
+  </main>
+  <script>
+    async function refresh() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+        const cards = document.getElementById("cards");
+        const backlogClass = data.backlog > 0 ? "warn" : "ok";
+        cards.innerHTML =
+          card("同步阶段", data.phase) +
+          card("已确认位点", data.committed) +
+          card("已读水位", data.read_watermark) +
+          card("积压事件", data.backlog, backlogClass) +
+          card("目标背压", data.backpressured ? "是" : "否", data.backpressured ? "err" : "ok") +
+          card("等待投递组", data.pending_groups) +
+          card("schema 变更", data.schema_changes);
+        const tables = document.getElementById("tables");
+        tables.innerHTML = Object.keys(data.tables).map(table =>
+          `<tr><td>${table}</td><td>${data.tables[table]}</td><td>${(data.schema_versions[table] || []).length}</td></tr>`
+        ).join("");
+        const stats = document.getElementById("stats");
+        stats.innerHTML = Object.keys(data.stats).map(key =>
+          `<tr><td>${key}</td><td>${data.stats[key]}</td></tr>`
+        ).join("");
+        document.getElementById("updated").textContent = "更新于 " + new Date().toLocaleTimeString();
+      } catch (error) {
+        document.getElementById("updated").textContent = "状态获取失败: " + error;
+      }
+    }
+    function card(label, value, cls) {
+      return `<div class="card"><div class="label">${label}</div><div class="value ${cls || ""}">${value}</div></div>`;
+    }
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>
